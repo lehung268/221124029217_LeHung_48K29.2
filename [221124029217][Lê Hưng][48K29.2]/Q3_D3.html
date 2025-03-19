@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Doanh số bán hàng theo Tháng</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    .bar:hover {
+      fill: orange;
+    }
+    .axis-label {
+      font-size: 12px;
+    }
+    .tooltip {
+      position: absolute;
+      background-color: rgba(0, 0, 0, 0.7);
+      color: white;
+      padding: 6px 10px;
+      border-radius: 5px;
+      font-size: 12px;
+      pointer-events: none;
+      visibility: hidden;
+    }
+    .label {
+      font-size: 10px;
+      font-weight: bold;
+      text-anchor: middle;
+      fill: white;
+    }
+  </style>
+</head>
+<body>
+  <h2>Doanh số bán hàng theo Tháng</h2>
+  <div id="chart"></div>
+  <div class="tooltip"></div>
+
+  <script>
+    d3.csv("data_ggsheet - data.csv").then(function(data) {
+      console.log("Dữ liệu đã load:", data);
+      
+      if (!data[0]["Thành tiền"] || !data[0]["Thời gian tạo đơn"]) {
+        console.error("⚠️ Tên cột không đúng! Kiểm tra file CSV.");
+        return;
+      }
+
+      data.forEach(d => {
+        d.date = new Date(d["Thời gian tạo đơn"]);
+        d.month = String(d.date.getMonth() + 1).padStart(2, '0');
+      });
+
+      const revenueByMonth = d3.rollup(data, 
+        v => d3.sum(v, d => +d["Thành tiền"]), 
+        d => d.month
+      );
+
+      const dataset = Array.from(revenueByMonth, ([month, revenue]) => ({ month, revenue }))
+                           .sort((a, b) => a.month - b.month);
+
+      const colorScale = d3.scaleOrdinal(d3.schemeCategory10)
+                           .domain(dataset.map(d => d.month));
+
+      const margin = { top: 20, right: 50, bottom: 40, left: 80 };
+      const width = 1100 - margin.left - margin.right;
+      const height = 600 - margin.top - margin.bottom;
+
+      const svg = d3.select("#chart")
+        .append("svg")
+        .attr("width", width + margin.left + margin.right)
+        .attr("height", height + margin.top + margin.bottom)
+        .append("g")
+        .attr("transform", `translate(${margin.left}, ${margin.top})`);
+
+      const x = d3.scaleBand()
+        .domain(dataset.map(d => d.month))
+        .range([0, width])
+        .padding(0.2);
+
+      const y = d3.scaleLinear()
+        .domain([0, d3.max(dataset, d => d.revenue)])
+        .nice()
+        .range([height, 0]);
+
+      svg.append("g")
+        .attr("transform", `translate(0, ${height})`)
+        .call(d3.axisBottom(x).tickFormat(d => `Tháng ${d}`));
+
+      svg.append("g")
+        .call(d3.axisLeft(y).ticks(5).tickFormat(d3.format(",")));
+
+      const tooltip = d3.select(".tooltip");
+
+      svg.selectAll(".bar")
+        .data(dataset)
+        .enter()
+        .append("rect")
+        .attr("class", "bar")
+        .attr("x", d => x(d.month))
+        .attr("y", d => y(d.revenue))
+        .attr("width", x.bandwidth())
+        .attr("height", d => height - y(d.revenue))
+        .attr("fill", d => colorScale(d.month))
+        .on("mouseover", (event, d) => {
+          tooltip.style("visibility", "visible")
+                 .html(`Tháng: ${d.month}<br>Doanh số: ${d.revenue.toLocaleString()} triệu VND`);
+        })
+        .on("mousemove", (event) => {
+          tooltip.style("top", (event.pageY - 30) + "px")
+                 .style("left", (event.pageX + 10) + "px");
+        })
+        .on("mouseout", () => {
+          tooltip.style("visibility", "hidden");
+        });
+      
+      svg.selectAll(".label")
+        .data(dataset)
+        .enter()
+        .append("text")
+        .attr("class", "label")
+        .attr("x", d => x(d.month) + x.bandwidth() / 2)
+        .attr("y", d => y(d.revenue) + 15)
+        .attr("text-anchor", "middle")
+        .text(d => `${Math.round(d.revenue / 1000000)} triệu VND`);
+    }).catch(error => console.error("Lỗi khi đọc CSV:", error));
+  </script>
+</body>
+</html>

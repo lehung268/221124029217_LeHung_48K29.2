@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Xác suất bán theo Nhóm Hàng theo Tháng</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    .line {
+      fill: none;
+      stroke-width: 2px;
+    }
+    .axis-label {
+      font-size: 14px;
+    }
+    .dot {
+      fill: white;
+      stroke-width: 2px;
+    }
+    .tooltip {
+      position: absolute;
+      background: lightgray;
+      padding: 5px;
+      border-radius: 5px;
+      font-size: 12px;
+      pointer-events: none;
+      visibility: hidden;
+    }
+  </style>
+</head>
+<body>
+  <h2>Xác suất bán theo Nhóm Hàng theo Tháng</h2>
+  <div id="chart"></div>
+  <div id="tooltip" class="tooltip"></div>
+
+  <script>
+    d3.csv("data_ggsheet - data.csv").then(function(data) {
+      console.log("Dữ liệu đã load:", data);
+
+      if (!data[0]["Mã nhóm hàng"] || !data[0]["Tên nhóm hàng"] || !data[0]["Mã đơn hàng"] || !data[0]["Thời gian tạo đơn"]) {
+        console.error("⚠️ Tên cột không đúng! Kiểm tra file CSV.");
+        return;
+      }
+
+      data.forEach(d => {
+        d.Tháng = "Tháng " + d["Thời gian tạo đơn"].substring(5, 7);
+      });
+
+      const totalOrdersByMonth = d3.rollup(data, v => new Set(v.map(d => d["Mã đơn hàng"]).filter(d => d)).size, d => d.Tháng);
+      
+      const ordersByCategoryMonth = d3.rollup(data, 
+        v => new Set(v.map(d => d["Mã đơn hàng"]).filter(d => d)).size, 
+        d => d.Tháng, d => `[${d["Mã nhóm hàng"]}] ${d["Tên nhóm hàng"]}`
+      );
+
+      let dataset = [];
+      ordersByCategoryMonth.forEach((categories, month) => {
+        categories.forEach((orders, label) => {
+          dataset.push({
+            month,
+            label,
+            probability: orders / totalOrdersByMonth.get(month),
+            orders
+          });
+        });
+      });
+      
+      dataset.sort((a, b) => a.month.localeCompare(b.month));
+      
+      const margin = { top: 40, right: 150, bottom: 50, left: 70 };
+      const width = 1000 - margin.left - margin.right;
+      const height = 500 - margin.top - margin.bottom;
+
+      const svg = d3.select("#chart")
+        .append("svg")
+        .attr("width", width + margin.left + margin.right)
+        .attr("height", height + margin.top + margin.bottom)
+        .append("g")
+        .attr("transform", `translate(${margin.left}, ${margin.top})`);
+
+      const x = d3.scaleBand()
+        .domain([...new Set(dataset.map(d => d.month))])
+        .range([0, width])
+        .padding(0.1);
+
+      const y = d3.scaleLinear()
+        .domain([0.2, d3.max(dataset, d => d.probability)])
+        .nice()
+        .range([height, 0]);
+
+      const color = d3.scaleOrdinal(d3.schemeCategory10);
+
+      const groupedData = d3.group(dataset, d => d.label);
+
+      svg.append("g")
+        .attr("transform", `translate(0,${height})`)
+        .call(d3.axisBottom(x))
+        .selectAll("text")
+        .attr("transform", "rotate(-45)")
+        .style("text-anchor", "end");
+
+      svg.append("g")
+        .call(d3.axisLeft(y).tickFormat(d3.format(".0%")));
+
+      const tooltip = d3.select("#tooltip");
+
+      groupedData.forEach((values, key) => {
+        svg.append("path")
+          .datum(values)
+          .attr("fill", "none")
+          .attr("stroke", color(key))
+          .attr("stroke-width", 2)
+          .attr("class", "line")
+          .attr("d", d3.line()
+            .x(d => x(d.month) + x.bandwidth() / 2)
+            .y(d => y(d.probability))
+          );
+
+        svg.selectAll(".dot")
+          .data(values)
+          .enter()
+          .append("circle")
+          .attr("class", "dot")
+          .attr("cx", d => x(d.month) + x.bandwidth() / 2)
+          .attr("cy", d => y(d.probability))
+          .attr("r", 4)
+          .attr("fill", color(key))
+          .attr("stroke", "black")
+          .on("mouseover", (event, d) => {
+            tooltip.style("visibility", "visible")
+              .html(`<strong>${d.label}</strong><br>Tháng: ${d.month}<br>Xác suất: ${(d.probability * 100).toFixed(2)}%`)
+              .style("left", `${event.pageX + 10}px`)
+              .style("top", `${event.pageY - 10}px`);
+          })
+          .on("mousemove", event => {
+            tooltip.style("left", `${event.pageX + 10}px`)
+              .style("top", `${event.pageY - 10}px`);
+          })
+          .on("mouseout", () => {
+            tooltip.style("visibility", "hidden");
+          });
+      });
+
+      const legend = svg.append("g")
+        .attr("transform", `translate(${width + 10}, 0)`);
+
+      let i = 0;
+      groupedData.forEach((_, key) => {
+        legend.append("rect")
+          .attr("x", 0)
+          .attr("y", i * 20)
+          .attr("width", 12)
+          .attr("height", 12)
+          .attr("fill", color(key));
+
+        legend.append("text")
+          .attr("x", 20)
+          .attr("y", i * 20 + 10)
+          .text(key)
+          .style("font-size", "12px")
+          .attr("alignment-baseline", "middle");
+
+        i++;
+      });
+    }).catch(error => console.error("Lỗi khi đọc CSV:", error));
+  </script>
+</body>
+</html>

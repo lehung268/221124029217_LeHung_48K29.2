@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Doanh số bán trung bình theo Khung Giờ</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    .bar:hover {
+      fill: orange;
+    }
+    .axis-label {
+      font-size: 14px;
+    }
+    .label {
+      font-size: 14px;
+      font-weight: bold;
+      text-anchor: middle;
+      fill: black;
+    }
+    .tooltip {
+      position: absolute;
+      background: rgba(0, 0, 0, 0.75);
+      color: white;
+      padding: 8px;
+      border-radius: 4px;
+      font-size: 14px;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+  </style>
+</head>
+<body>
+  <h2>Doanh số bán trung bình theo Khung Giờ</h2>
+  <div id="chart"></div>
+  <div class="tooltip" id="tooltip"></div>
+
+  <script>
+    d3.csv("data_ggsheet - data.csv").then(function(data) {
+      console.log("Dữ liệu đã load:", data);
+
+      if (!data[0]["Thành tiền"] || !data[0]["Thời gian tạo đơn"]) {
+        console.error("⚠️ Tên cột không đúng! Kiểm tra file CSV.");
+        return;
+      }
+
+      data.forEach(d => {
+        d.date = new Date(d["Thời gian tạo đơn"]);
+        d.hour = d.date.getHours();
+        d.timeRange = `${d.hour}:00-${d.hour}:59`;
+      });
+
+      const hourLabels = Array.from({length: 16}, (_, i) => `${i + 8}:00-${i + 8}:59`);
+      const colors = d3.schemeCategory10;
+      
+      const revenueByHour = d3.rollup(data, 
+        v => d3.sum(v, d => +d["Thành tiền"]) / new Set(v.map(d => `${d.date.getDate()}-${d.date.getMonth() + 1}-${d.date.getFullYear()}`)).size, 
+        d => d.timeRange
+      );
+
+      let dataset = hourLabels.map(label => ({ 
+          label, 
+          revenue: revenueByHour.get(label) || 0,
+          color: colors[hourLabels.indexOf(label) % colors.length]
+      }));
+      
+      const margin = { top: 20, right: 60, bottom: 80, left: 80 };
+      const width = 1100 - margin.left - margin.right;
+      const height = 600 - margin.top - margin.bottom;
+
+      const svg = d3.select("#chart")
+        .append("svg")
+        .attr("width", width + margin.left + margin.right)
+        .attr("height", height + margin.top + margin.bottom)
+        .append("g")
+        .attr("transform", `translate(${margin.left}, ${margin.top})`);
+
+      const x = d3.scaleBand()
+        .domain(dataset.map(d => d.label))
+        .range([0, width])
+        .padding(0.2);
+
+      const y = d3.scaleLinear()
+        .domain([0, d3.max(dataset, d => d.revenue)])
+        .nice()
+        .range([height, 0]);
+
+      svg.append("g")
+        .attr("transform", `translate(0, ${height})`)
+        .call(d3.axisBottom(x))
+        .selectAll("text")
+        .style("text-anchor", "end")
+        .attr("dx", "-0.8em")
+        .attr("dy", "0.15em")
+        .attr("transform", "rotate(-45)");
+
+      svg.append("g")
+        .call(d3.axisLeft(y).ticks(5).tickFormat(d => `${(d / 1_000_000).toFixed(1)}M`));
+
+      const tooltip = d3.select("#tooltip");
+
+      svg.selectAll(".bar")
+        .data(dataset)
+        .enter()
+        .append("rect")
+        .attr("class", "bar")
+        .attr("x", d => x(d.label))
+        .attr("y", d => y(d.revenue))
+        .attr("width", x.bandwidth())
+        .attr("height", d => height - y(d.revenue))
+        .attr("fill", d => d.color)
+        .on("mouseover", (event, d) => {
+          tooltip.style("opacity", 1)
+                 .html(`<strong>Khung giờ:</strong> ${d.label}<br><strong>Doanh số TB:</strong> ${d.revenue.toLocaleString()}`);
+        })
+        .on("mousemove", event => {
+          tooltip.style("left", `${event.pageX + 10}px`)
+                 .style("top", `${event.pageY - 20}px`);
+        })
+        .on("mouseout", () => {
+          tooltip.style("opacity", 0);
+        });
+
+      svg.selectAll(".label")
+        .data(dataset)
+        .enter()
+        .append("text")
+        .attr("class", "label")
+        .attr("x", d => x(d.label) + x.bandwidth() / 2)
+        .attr("y", d => y(d.revenue) + 15)
+        .attr("text-anchor", "middle")
+        .text(d => `${(d.revenue / 1_000).toFixed(1)}K`);
+    }).catch(error => console.error("Lỗi khi đọc CSV:", error));
+  </script>
+</body>
+</html>

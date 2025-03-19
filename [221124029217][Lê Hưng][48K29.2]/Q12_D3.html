@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Phân phối Mức chi trả của Khách hàng</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    body {
+      background-color: #eef2f3;
+    }
+    .chart-container {
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
+      width: fit-content;
+      margin: auto;
+    }
+    .bar-rect {
+      fill: #FF7F50;
+      stroke: #000;
+      stroke-width: 1px;
+    }
+    .bar-rect:hover {
+      fill: #FFD700;
+    }
+    .axis-label {
+      font-size: 14px;
+    }
+    .chart-border {
+      stroke: black;
+      stroke-width: 2px;
+      fill: none;
+    }
+    .x-axis text {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <h2>Phân phối Mức chi trả của Khách hàng</h2>
+  <div class="chart-container">
+    <div id="chart-area"></div>
+  </div>
+
+  <script>
+    d3.csv("data_ggsheet - data.csv").then(function(rawData) {
+      const spendingData = d3.rollup(rawData, 
+        values => d3.sum(values, item => +item["Thành tiền"]), 
+        item => item["Mã khách hàng"]);
+      
+      const binSize = 50000;
+      const maxSpending = Math.ceil(Math.max(...Array.from(spendingData.values())) / binSize) * binSize;
+      
+      const bins = Array.from({length: Math.ceil(maxSpending / binSize)}, (_, i) => [i * binSize, (i + 1) * binSize]);
+      const spendingBins = new Map(bins.map(bin => [`${bin[0]}-${bin[1]}`, 0]));
+
+      spendingData.forEach((total) => {
+        const bin = bins.find(b => total >= b[0] && total < b[1]);
+        if (bin) {
+          spendingBins.set(`${bin[0]}-${bin[1]}`, (spendingBins.get(`${bin[0]}-${bin[1]}`) || 0) + 1);
+        }
+      });
+
+      const dataSet = Array.from(spendingBins, ([spendingRange, count]) => ({ spendingRange, count }));
+
+      const marginConfig = { top: 20, right: 30, bottom: 80, left: 100 };
+      const graphWidth = 800 - marginConfig.left - marginConfig.right;
+      const graphHeight = 500 - marginConfig.top - marginConfig.bottom;
+
+      const svgContainer = d3.select("#chart-area")
+        .append("svg")
+        .attr("width", graphWidth + marginConfig.left + marginConfig.right)
+        .attr("height", graphHeight + marginConfig.top + marginConfig.bottom)
+        .append("g")
+        .attr("transform", `translate(${marginConfig.left}, ${marginConfig.top})`);
+
+      svgContainer.append("rect")
+        .attr("class", "chart-border")
+        .attr("x", 0)
+        .attr("y", 0)
+        .attr("width", graphWidth)
+        .attr("height", graphHeight);
+
+      const xAxisScale = d3.scaleBand()
+        .domain(dataSet.map(item => item.spendingRange))
+        .range([0, graphWidth])
+        .padding(0.2);
+
+      const yAxisScale = d3.scaleLinear()
+        .domain([0, d3.max(dataSet, item => item.count)])
+        .nice()
+        .range([graphHeight, 0]);
+
+      svgContainer.append("g")
+        .attr("transform", `translate(0, ${graphHeight})`)
+        .attr("class", "x-axis")
+        .call(d3.axisBottom(xAxisScale))
+        .selectAll("text")
+        .style("display", "none");
+
+      svgContainer.append("g")
+        .call(d3.axisLeft(yAxisScale).ticks(5).tickFormat(d3.format(",")));
+
+      svgContainer.selectAll(".bar-rect")
+        .data(dataSet)
+        .enter()
+        .append("rect")
+        .attr("class", "bar-rect")
+        .attr("x", item => xAxisScale(item.spendingRange))
+        .attr("y", item => yAxisScale(item.count))
+        .attr("width", xAxisScale.bandwidth())
+        .attr("height", item => graphHeight - yAxisScale(item.count))
+        .append("title")
+        .text(item => `Khoảng chi tiêu: ${item.spendingRange}đ, Số khách hàng: ${item.count}`);
+    }).catch(error => console.error("Lỗi khi tải CSV:", error));
+  </script>
+</body>
+</html>
