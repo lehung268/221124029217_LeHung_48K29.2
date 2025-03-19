@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Xác suất bán theo Mặt Hàng trong Nhóm Hàng</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    .bar {
+      fill-opacity: 0.7;
+    }
+    .axis-label {
+      font-size: 14px;
+    }
+    .tooltip {
+      position: absolute;
+      background: rgba(0, 0, 0, 0.7);
+      color: white;
+      padding: 5px;
+      border-radius: 5px;
+      font-size: 12px;
+      visibility: hidden;
+    }
+    .chart-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+    }
+    .chart {
+      flex: 1 1 45%;
+    }
+  </style>
+</head>
+<body>
+  <h2>Xác suất bán theo Mặt Hàng trong Nhóm Hàng</h2>
+  <div class="chart-container" id="chart-container"></div>
+  <div class="tooltip"></div>
+
+  <script>
+    d3.csv("data_ggsheet - data.csv").then(function(data) {
+      console.log("Dữ liệu đã load:", data);
+
+      if (!data[0]["Mã nhóm hàng"] || !data[0]["Tên nhóm hàng"] || !data[0]["Mã đơn hàng"] || !data[0]["Tên mặt hàng"] || !data[0]["Mã mặt hàng"]) {
+        console.error("⚠️ Tên cột không đúng! Kiểm tra file CSV.");
+        return;
+      }
+
+      const totalOrdersByCategory = d3.rollup(data, 
+        v => new Set(v.map(d => d["Mã đơn hàng"]).filter(d => d)).size, 
+        d => `[${d["Mã nhóm hàng"]}] ${d["Tên nhóm hàng"]}`
+      );
+      
+      const ordersByItemCategory = d3.rollup(data, 
+        v => new Set(v.map(d => d["Mã đơn hàng"]).filter(d => d)).size, 
+        d => `[${d["Mã nhóm hàng"]}] ${d["Tên nhóm hàng"]}`,
+        d => `[${d["Mã mặt hàng"]}] ${d["Tên mặt hàng"]}`
+      );
+      
+      const chartContainer = d3.select("#chart-container");
+      const colorScale = d3.scaleOrdinal(d3.schemeCategory10);
+
+      ordersByItemCategory.forEach((items, category) => {
+        let dataset = [];
+        items.forEach((orders, item) => {
+          dataset.push({ item, probability: orders / totalOrdersByCategory.get(category) });
+        });
+
+        dataset.sort((a, b) => b.probability - a.probability);
+
+        const margin = { top: 40, right: 40, bottom: 50, left: 150 };
+        const width = 700 - margin.left - margin.right;
+        const height = 400 - margin.top - margin.bottom;
+
+        const svg = chartContainer.append("div")
+          .attr("class", "chart")
+          .append("svg")
+          .attr("width", width + margin.left + margin.right)
+          .attr("height", height + margin.top + margin.bottom)
+          .append("g")
+          .attr("transform", `translate(${margin.left}, ${margin.top})`);
+
+        svg.append("text")
+          .attr("x", width / 2)
+          .attr("y", -10)
+          .attr("text-anchor", "middle")
+          .style("font-size", "16px")
+          .style("font-weight", "bold")
+          .text(category);
+
+        const y = d3.scaleBand()
+          .domain(dataset.map(d => d.item))
+          .range([0, height])
+          .padding(0.2);
+
+        const x = d3.scaleLinear()
+          .domain([0, d3.max(dataset, d => d.probability)])
+          .nice()
+          .range([0, width]);
+
+        svg.append("g")
+          .call(d3.axisLeft(y));
+
+        svg.append("g")
+          .attr("transform", `translate(0,${height})`)
+          .call(d3.axisBottom(x).tickFormat(d3.format(".0%")));
+
+        const tooltip = d3.select(".tooltip");
+
+        svg.selectAll(".bar")
+          .data(dataset)
+          .enter()
+          .append("rect")
+          .attr("class", "bar")
+          .attr("x", 0)
+          .attr("y", d => y(d.item))
+          .attr("width", d => x(d.probability))
+          .attr("height", y.bandwidth())
+          .attr("fill", d => colorScale(d.item))
+          .on("mouseover", (event, d) => {
+            tooltip.style("visibility", "visible")
+              .text(`${d.item}: ${(d.probability * 100).toFixed(2)}%`)
+              .style("left", `${event.pageX + 10}px`)
+              .style("top", `${event.pageY - 20}px`);
+          })
+          .on("mousemove", event => {
+            tooltip.style("left", `${event.pageX + 10}px`)
+              .style("top", `${event.pageY - 20}px`);
+          })
+          .on("mouseout", () => tooltip.style("visibility", "hidden"));
+
+        svg.selectAll(".bar-label")
+          .data(dataset)
+          .enter()
+          .append("text")
+          .attr("x", d => x(d.probability) + 5)
+          .attr("y", d => y(d.item) + y.bandwidth() / 2)
+          .attr("dy", "0.35em")
+          .text(d => (d.probability * 100).toFixed(1) + "%")
+          .style("font-size", "12px")
+          .style("fill", "black");
+      });
+    }).catch(error => console.error("Lỗi khi đọc CSV:", error));
+  </script>
+</body>
+</html>
